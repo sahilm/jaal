@@ -16,6 +16,7 @@ var version = "latest"
 
 func main() {
 	var opts struct {
+		SlackURL       string `long:"slack-url" description:"slack notification url"`
 		SSHHostKeyFile string `long:"ssh-host-key-file" description:"path to the ssh host key file"`
 		SSHPort        uint   `long:"ssh-port" description:"port to listen on for ssh traffic" default:"22"`
 		Version        func() `long:"version" description:"print version and exit"`
@@ -38,7 +39,16 @@ func main() {
 	logger.Out = os.Stderr
 	logger.Formatter = &jaal.UTCFormatter{Formatter: &logrus.JSONFormatter{}}
 
-	eventLogger := jaal.NewEventLogger(os.Stdout)
+	var notifiers []jaal.EventNotifier
+	if opts.SlackURL != "" {
+		n, err := jaal.NewSlackNotifier(opts.SlackURL, logger)
+		if err != nil {
+			logger.Fatal(err)
+		}
+		notifiers = append(notifiers, n)
+	}
+
+	eventLogger := jaal.NewEventLogger(os.Stdout, notifiers...)
 
 	sshServer := ssh.Server{
 		Addr:        fmt.Sprintf(":%v", opts.SSHPort),

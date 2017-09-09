@@ -21,23 +21,31 @@ func (u UTCFormatter) Format(e *logrus.Entry) ([]byte, error) {
 }
 
 type EventLogger struct {
-	l *logrus.Logger
+	l         *logrus.Logger
+	notifiers []EventNotifier
 }
 
-func NewEventLogger(out io.Writer) *EventLogger {
+type EventNotifier interface {
+	notify(event *Event)
+}
+
+func NewEventLogger(out io.Writer, notifiers ...EventNotifier) *EventLogger {
 	l := logrus.New()
 	l.Out = out
 	l.Formatter = &eventLogFormatter{}
-	return &EventLogger{l: l}
+	return &EventLogger{l, notifiers}
 }
 
-func (el *EventLogger) Log(now time.Time, event *Event) {
+func (el EventLogger) Log(now time.Time, event *Event) {
 	el.l.WithField("data", event.WithMetadata(now)).Info("")
+	for _, notifier := range el.notifiers {
+		notifier.notify(event)
+	}
 }
 
 type eventLogFormatter struct{}
 
-func (f *eventLogFormatter) Format(entry *logrus.Entry) ([]byte, error) {
+func (f eventLogFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 	var serialized []byte
 	var err error
 	serialized, err = json.Marshal(entry.Data["data"])
