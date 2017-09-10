@@ -32,7 +32,7 @@ func (s Server) ListenAndServe() (chan *jaal.Event, chan error) {
 	if addr == "" {
 		addr = ":22"
 	}
-	s.getLogger().Info(fmt.Sprintf("starting ssh server on: %v", addr))
+	s.ensureLogger().Info(fmt.Sprintf("starting ssh server on: %v", addr))
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		errchan <- jaal.FatalError{Err: err}
@@ -81,16 +81,19 @@ func (s *Server) handleConn(newConn net.Conn, eventchan chan<- *jaal.Event) {
 	if s.MaxTimeout > 0 {
 		conn.maxDeadline = time.Now().Add(s.MaxTimeout)
 	}
+	var err error
 	defer func() {
-		eventchan <- logoutEvent(ctx)
+		if err == nil {
+			eventchan <- logoutEvent(ctx)
+		}
 		conn.Close()
 	}()
 	sshConn, chans, reqs, err := gossh.NewServerConn(conn, s.config(ctx))
 	if err != nil {
 		return
 	}
+	ctx.applyConnMetadata(sshConn, s.ensureLogger())
 	eventchan <- loginEvent(ctx)
-	ctx.applyConnMetadata(sshConn, s.getLogger())
 	go gossh.DiscardRequests(reqs)
 	for ch := range chans {
 		session := &session{
@@ -122,7 +125,7 @@ func (s *Server) config(ctx *sshContext) *gossh.ServerConfig {
 
 		// Allow everyone to login. This is a honeypot 😀
 		PasswordCallback: func(cm gossh.ConnMetadata, pass []byte) (*gossh.Permissions, error) {
-			ctx.applyConnMetadata(cm, s.getLogger())
+			ctx.applyConnMetadata(cm, s.ensureLogger())
 			ctx.applyPassword(string(pass))
 			return ctx.Permissions(), nil
 		},
@@ -168,7 +171,7 @@ func generateSigner() (gossh.Signer, error) {
 	return signer, nil
 }
 
-func (s *Server) getLogger() *logrus.Logger {
+func (s *Server) ensureLogger() *logrus.Logger {
 	if s.Logger == nil {
 		s.Logger = logrus.New()
 	}
